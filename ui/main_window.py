@@ -344,16 +344,17 @@ class MainWindow(QMainWindow):
         self.current_theme = "light" if self.current_theme == "dark" else "dark"
         theme_module.apply_theme(QApplication.instance(), self.current_theme)
 
-        # Иконка: в тёмной теме показываем солнце (значит, «включить светлую»),
-        # в светлой — луну.
+        # Иконка в тулбаре: в тёмной теме — солнце (включить светлую),
+        # в светлой — луна.
         color = "#1a1a1a" if self.current_theme == "light" else "#e6e6e6"
         self.act_theme.setIcon(icons.icon(
             "sun" if self.current_theme == "dark" else "moon", color))
 
-        # Обновляем иконки кнопок редактора и оптимизации под контраст темы
+        # Иконки кнопок редактора и оптимизации
         self.editor.attach_icons(icons.icon("plus", color),
                                  icons.icon("minus", color))
         self.optimization.attach_icon(icons.icon("gear", color))
+
         for act, name in (
                 (self.act_calc, "play"),
                 (self.act_add, "plus"),
@@ -364,20 +365,19 @@ class MainWindow(QMainWindow):
         ):
             act.setIcon(icons.icon(name, color))
 
-        # Обновить графики и таблицу под новую палитру
+        # Обновляем только цвета — без пересчёта
         for w in (self.results_table, self.gantt, self.network):
             w.set_theme(self.current_theme)
 
+        # Перерисовываем графики на уже готовом self.result
         if self.result is not None:
             try:
-                self.results_table.update_results(self.result)
                 self.gantt.plot(self.result)
                 self.network.plot(self.editor.get_tasks(), self.result)
             except Exception:
                 pass
-
-        # Перерисовать информационную строку PERT
-        self._calculate()
+        # Таблица результатов перекрасится сама:
+        # ResultsTable.set_theme уже вызывает update_results(self.result)
 
     def _about(self):
         QMessageBox.about(
