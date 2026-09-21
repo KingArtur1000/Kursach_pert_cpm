@@ -175,9 +175,9 @@ class GanttChart(_ThemedChart):
 
         dur_text = (f"Длительность = {result.duration:.2f}"
                     .rstrip("0").rstrip("."))
-        ax.text(0.015, 0.985, dur_text,
+        ax.text(0.985, 0.985, dur_text,
                 transform=ax.transAxes,
-                ha="left", va="top", fontsize=10,
+                ha="right", va="top", fontsize=10,
                 color=pal["duration"], zorder=6,
                 bbox=dict(boxstyle="round,pad=0.35",
                           facecolor=pal["fig_bg"],
