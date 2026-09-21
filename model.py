@@ -2,128 +2,110 @@
 Математическая модель сетевого планирования (CPM).
 
 Обозначения:
-    ES (Early Start)  — раннее начало работы
-    EF (Early Finish) — раннее окончание работы
-    LS (Late Start)   — позднее начало работы
-    LF (Late Finish)  — позднее окончание работы
-    TF (Total Float)  — полный резерв времени
-    FF (Free Float)   — свободный резерв времени
+    ES / EF — раннее начало / окончание
+    LS / LF — позднее начало / окончание
+    TF      — полный резерв времени
+    FF      — свободный резерв времени
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import List, Dict
 import networkx as nx
+
+
+EPS = 1e-9
+
+
+@dataclass
+class Task:
+    task_id: str
+    name: str
+    duration: float
+    predecessors: List[str] = field(default_factory=list)
 
 
 @dataclass
 class TaskResult:
-    """Результат расчёта по одной работе."""
     task_id: str
-    duration: int
-    predecessors: List[str] = field(default_factory=list)
-    successors: List[str] = field(default_factory=list)
-    es: int = 0
-    ef: int = 0
-    ls: int = 0
-    lf: int = 0
-    tf: int = 0   # полный резерв
-    ff: int = 0   # свободный резерв
+    name: str
+    duration: float
+    predecessors: List[str]
+    successors: List[str]
+    es: float = 0
+    ef: float = 0
+    ls: float = 0
+    lf: float = 0
+    tf: float = 0
+    ff: float = 0
 
     @property
     def is_critical(self) -> bool:
-        return self.tf == 0
+        return abs(self.tf) < EPS
 
 
 @dataclass
 class ProjectResult:
-    """Результат расчёта всего проекта."""
     tasks: Dict[str, TaskResult]
-    duration: int
+    duration: float
     critical_path: List[str]
 
 
-def build_graph(tasks: Dict[str, tuple]) -> nx.DiGraph:
-    """Строит ориентированный граф зависимостей между работами."""
+def build_graph(tasks: List[Task]) -> nx.DiGraph:
     G = nx.DiGraph()
-    for task_id, (duration, preds) in tasks.items():
-        G.add_node(task_id, duration=duration)
-        for p in preds:
-            G.add_edge(p, task_id)
+    for t in tasks:
+        G.add_node(t.task_id, duration=t.duration, name=t.name)
+    for t in tasks:
+        for p in t.predecessors:
+            if p in G:
+                G.add_edge(p, t.task_id)
     return G
 
 
-def calculate(tasks: Dict[str, tuple]) -> ProjectResult:
-    """Основной расчёт CPM."""
+def calculate(tasks: List[Task]) -> ProjectResult:
+    """Прямой и обратный проход + расчёт резервов."""
     G = build_graph(tasks)
     order = list(nx.topological_sort(G))
 
     results: Dict[str, TaskResult] = {}
-    for t in order:
-        duration, preds = tasks[t]
-        results[t] = TaskResult(
-            task_id=t,
-            duration=duration,
-            predecessors=list(G.predecessors(t)),
-            successors=list(G.successors(t)),
+    for t in tasks:
+        results[t.task_id] = TaskResult(
+            task_id=t.task_id,
+            name=t.name,
+            duration=t.duration,
+            predecessors=list(G.predecessors(t.task_id)),
+            successors=list(G.successors(t.task_id)),
         )
 
-    # ---------- Прямой проход (forward pass) ----------
-    for t in order:
-        r = results[t]
-        if r.predecessors:
-            r.es = max(results[p].ef for p in r.predecessors)
-        else:
-            r.es = 0
+    # Прямой проход
+    for tid in order:
+        r = results[tid]
+        r.es = max((results[p].ef for p in r.predecessors), default=0.0)
         r.ef = r.es + r.duration
 
-    project_duration = max(r.ef for r in results.values())
+    project_duration = max((r.ef for r in results.values()), default=0.0)
 
-    # ---------- Обратный проход (backward pass) ----------
-    for t in reversed(order):
-        r = results[t]
-        if r.successors:
-            r.lf = min(results[s].ls for s in r.successors)
-        else:
-            r.lf = project_duration
+    # Обратный проход
+    for tid in reversed(order):
+        r = results[tid]
+        r.lf = min((results[s].ls for s in r.successors),
+                   default=project_duration)
         r.ls = r.lf - r.duration
 
-    # ---------- Резервы ----------
-    for t in order:
-        r = results[t]
+    # Резервы
+    for tid in order:
+        r = results[tid]
         r.tf = r.ls - r.es
         if r.successors:
             r.ff = min(results[s].es for s in r.successors) - r.ef
         else:
             r.ff = project_duration - r.ef
 
-    # ---------- Критический путь ----------
-    # Работы с нулевым полным резервом, упорядоченные по ES
+    # Критический путь
     critical = sorted(
-        [t for t, r in results.items() if r.is_critical],
+        [tid for tid, r in results.items() if r.is_critical],
         key=lambda t: results[t].es,
     )
 
-    return ProjectResult(
-        tasks=results,
-        duration=project_duration,
-        critical_path=critical,
-    )
-
-
-def to_table(result: ProjectResult, names: Dict[str, str] | None = None):
-    """Превращает результат в таблицу (список словарей) для вывода/экспорта."""
-    rows = []
-    for t, r in sorted(result.tasks.items(), key=lambda x: x[1].es):
-        rows.append({
-            "ID": t,
-            "Работа": names.get(t, t) if names else t,
-            "Длит.": r.duration,
-            "ES": r.es,
-            "EF": r.ef,
-            "LS": r.ls,
-            "LF": r.lf,
-            "TF": r.tf,
-            "FF": r.ff,
-            "Крит.": "★" if r.is_critical else "",
-        })
-    return rows
+    return ProjectResult(tasks=results,
+                         duration=project_duration,
+                         critical_path=critical)
