@@ -68,52 +68,68 @@ class MainWindow(QMainWindow):
 
     def _build_menu(self):
         menu = self.menuBar()
+
+        # ---- Файл ----
         file_menu = menu.addMenu("Файл")
 
-        new = QAction("Новый проект", self)
-        new.setShortcut(QKeySequence.New)
-        new.triggered.connect(self._new_project)
-        file_menu.addAction(new)
+        self.act_new = QAction("Новый проект", self)
+        self.act_new.setShortcut(QKeySequence.New)
+        self.act_new.triggered.connect(self._new_project)
+        file_menu.addAction(self.act_new)
 
-        open_a = QAction("Открыть...", self)
-        open_a.setShortcut(QKeySequence.Open)
-        open_a.triggered.connect(self._open_project)
-        file_menu.addAction(open_a)
+        self.act_open = QAction("Открыть...", self)
+        self.act_open.setShortcut(QKeySequence.Open)
+        self.act_open.triggered.connect(self._open_project)
+        file_menu.addAction(self.act_open)
 
-        save_a = QAction("Сохранить...", self)
-        save_a.setShortcut(QKeySequence.Save)
-        save_a.triggered.connect(self._save_project)
-        file_menu.addAction(save_a)
-
-        file_menu.addSeparator()
-
-        export_a = QAction("Экспорт результатов в CSV...", self)
-        export_a.triggered.connect(self._export_csv)
-        file_menu.addAction(export_a)
+        self.act_save = QAction("Сохранить...", self)
+        self.act_save.setShortcut(QKeySequence.Save)
+        self.act_save.triggered.connect(self._save_project)
+        file_menu.addAction(self.act_save)
 
         file_menu.addSeparator()
 
-        quit_a = QAction("Выход", self)
-        quit_a.setShortcut(QKeySequence.Quit)
-        quit_a.triggered.connect(self.close)
-        file_menu.addAction(quit_a)
+        self.act_export = QAction("Экспорт результатов в CSV...", self)
+        self.act_export.triggered.connect(self._export_csv)
+        file_menu.addAction(self.act_export)
 
+        file_menu.addSeparator()
+
+        self.act_quit = QAction("Выход", self)
+        self.act_quit.setShortcut(QKeySequence.Quit)
+        self.act_quit.triggered.connect(self.close)
+        file_menu.addAction(self.act_quit)
+
+        # ---- Расчёт ----
         calc_menu = menu.addMenu("Расчёт")
-        calc_a = QAction("Выполнить расчёт", self)
-        calc_a.setShortcut("F5")
-        calc_a.triggered.connect(self._calculate)
-        calc_menu.addAction(calc_a)
 
+        self.act_calc = QAction("Выполнить расчёт", self)
+        self.act_calc.setShortcut("F5")
+        self.act_calc.triggered.connect(self._calculate)
+        calc_menu.addAction(self.act_calc)
+
+        # ---- Вид ----
         view_menu = menu.addMenu("Вид")
-        theme_a = QAction("Переключить тему", self)
-        theme_a.setShortcut("Ctrl+T")
-        theme_a.triggered.connect(self._toggle_theme)
-        view_menu.addAction(theme_a)
 
+        self.act_theme = QAction("Переключить тему", self)
+        self.act_theme.setShortcut("Ctrl+T")
+        self.act_theme.triggered.connect(self._toggle_theme)
+        view_menu.addAction(self.act_theme)
+
+        # ---- Справка ----
         help_menu = menu.addMenu("Справка")
-        about_a = QAction("О программе", self)
-        about_a.triggered.connect(self._about)
-        help_menu.addAction(about_a)
+
+        self.act_about = QAction("О программе", self)
+        self.act_about.triggered.connect(self._about)
+        help_menu.addAction(self.act_about)
+
+        # ---- Регистрируем все действия в окне,
+        #      чтобы shortcuts работали при фокусе на любом виджете ----
+        for act in (self.act_new, self.act_open, self.act_save,
+                    self.act_export, self.act_quit, self.act_calc,
+                    self.act_theme, self.act_about):
+            act.setShortcutContext(Qt.WindowShortcut)
+            self.addAction(act)
 
     def _build_toolbar(self):
         tb = QToolBar("Панель инструментов")
@@ -121,22 +137,22 @@ class MainWindow(QMainWindow):
         tb.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.addToolBar(tb)
 
-        def add(text, slot, shortcut=None):
-            a = QAction(text, self)
-            if shortcut:
-                a.setShortcut(shortcut)
-            a.triggered.connect(slot)
-            tb.addAction(a)
-            return a
+        # Используем уже существующие QAction из меню — никаких дублей
+        tb.addAction(self.act_calc)
+        tb.addSeparator()
 
-        self.act_calc = add("Рассчитать", self._calculate, "F5")
+        self.act_add = QAction("Добавить", self)
+        self.act_add.triggered.connect(self.editor.add_row)
+        tb.addAction(self.act_add)
+
+        self.act_rm = QAction("Удалить", self)
+        self.act_rm.triggered.connect(self.editor.remove_selected)
+        tb.addAction(self.act_rm)
+
         tb.addSeparator()
-        self.act_add = add("Добавить", self.editor.add_row)
-        self.act_rm = add("Удалить", self.editor.remove_selected)
-        tb.addSeparator()
-        self.act_open = add("Открыть", self._open_project)
-        self.act_save = add("Сохранить", self._save_project)
-        self.act_export = add("Экспорт CSV", self._export_csv)
+        tb.addAction(self.act_open)
+        tb.addAction(self.act_save)
+        tb.addAction(self.act_export)
         tb.addSeparator()
 
         tb.addWidget(QLabel("  Режим: "))
@@ -148,7 +164,7 @@ class MainWindow(QMainWindow):
         tb.addWidget(self.mode_combo)
 
         tb.addSeparator()
-        self.act_theme = add("Тема", self._toggle_theme, "Ctrl+T")
+        tb.addAction(self.act_theme)
 
     def _apply_icons(self):
         color = "#e6e6e6"
