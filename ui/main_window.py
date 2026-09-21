@@ -30,6 +30,9 @@ class MainWindow(QMainWindow):
         self._build_toolbar()
         self._apply_icons()
         self._load_sample()
+        # Распространить стартовую тему на все графики
+        for w in (self.results_table, self.gantt, self.network):
+            w.set_theme(self.current_theme)
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
@@ -324,16 +327,41 @@ class MainWindow(QMainWindow):
     def _toggle_theme(self):
         self.current_theme = "light" if self.current_theme == "dark" else "dark"
         theme_module.apply_theme(QApplication.instance(), self.current_theme)
+
+        # Иконка: в тёмной теме показываем солнце (значит, «включить светлую»),
+        # в светлой — луну.
         color = "#1a1a1a" if self.current_theme == "light" else "#e6e6e6"
         self.act_theme.setIcon(icons.icon(
             "sun" if self.current_theme == "dark" else "moon", color))
-        # Перерисовать графики, чтобы подхватили цвета темы
+
+        # Обновляем иконки кнопок редактора и оптимизации под контраст темы
+        self.editor.attach_icons(icons.icon("plus", color),
+                                 icons.icon("minus", color))
+        self.optimization.attach_icon(icons.icon("gear", color))
+        for act, name in (
+                (self.act_calc, "play"),
+                (self.act_add, "plus"),
+                (self.act_rm, "minus"),
+                (self.act_open, "folder"),
+                (self.act_save, "save"),
+                (self.act_export, "export"),
+        ):
+            act.setIcon(icons.icon(name, color))
+
+        # Обновить графики и таблицу под новую палитру
+        for w in (self.results_table, self.gantt, self.network):
+            w.set_theme(self.current_theme)
+
         if self.result is not None:
             try:
+                self.results_table.update_results(self.result)
                 self.gantt.plot(self.result)
                 self.network.plot(self.editor.get_tasks(), self.result)
             except Exception:
                 pass
+
+        # Перерисовать информационную строку PERT
+        self._calculate()
 
     def _about(self):
         QMessageBox.about(

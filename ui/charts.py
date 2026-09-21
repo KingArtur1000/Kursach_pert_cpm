@@ -1,5 +1,4 @@
 from collections import defaultdict
-import math
 
 import networkx as nx
 import matplotlib
@@ -15,27 +14,25 @@ from PySide6.QtWidgets import (
     QLabel
 )
 
+import theme
 from model import build_graph
 
 
-CRITICAL_BG = QColor("#5a2a2a")
+CRITICAL_BG_DARK = QColor("#5a2a2a")
+CRITICAL_BG_LIGHT = QColor("#fde2e2")
 
 
 class ResultsTable(QWidget):
-    """Таблица результатов CPM + строка PERT-информации."""
-
     COLUMNS = ["ID", "Название", "Длит.", "ES", "EF",
                "LS", "LF", "TF", "FF", "Крит."]
 
     def __init__(self):
         super().__init__()
+        self.current_theme = "dark"
         layout = QVBoxLayout(self)
 
         self.info = QLabel("")
         self.info.setTextFormat(Qt.RichText)
-        self.info.setStyleSheet(
-            "background:#2a2a3a; padding:6px 10px; border-radius:4px;"
-        )
         self.info.setVisible(False)
         layout.addWidget(self.info)
 
@@ -45,7 +42,30 @@ class ResultsTable(QWidget):
         self.table.setAlternatingRowColors(True)
         layout.addWidget(self.table)
 
+        self.set_theme("dark")
+
+    def set_theme(self, name):
+        self.current_theme = name
+        if name == "dark":
+            self.info.setStyleSheet(
+                "background:#2a2a3a; padding:6px 10px; border-radius:4px;"
+                "color:#e6e6e6;"
+            )
+        else:
+            self.info.setStyleSheet(
+                "background:#eef1f7; padding:6px 10px; border-radius:4px;"
+                "color:#1a1a1a; border:1px solid #d0d3dc;"
+            )
+        # перекрасим критические строки
+        if hasattr(self, "result") and self.result is not None:
+            self.update_results(self.result)
+
     def update_results(self, result):
+        self.result = result
+        bg = (CRITICAL_BG_DARK if self.current_theme == "dark"
+              else CRITICAL_BG_LIGHT)
+        fg = QColor("#ffffff") if self.current_theme == "dark" else QColor("#7a1f1f")
+
         self.table.setRowCount(0)
         for tid, r in sorted(result.tasks.items(), key=lambda x: x[1].es):
             row = self.table.rowCount()
@@ -59,7 +79,8 @@ class ResultsTable(QWidget):
             for c, v in enumerate(values):
                 item = QTableWidgetItem(v)
                 if r.is_critical:
-                    item.setBackground(CRITICAL_BG)
+                    item.setBackground(bg)
+                    item.setForeground(fg)
                 self.table.setItem(row, c, item)
 
     def set_info(self, html: str):
@@ -67,86 +88,111 @@ class ResultsTable(QWidget):
         self.info.setVisible(bool(html))
 
     def clear(self):
+        self.result = None
         self.table.setRowCount(0)
         self.set_info("")
 
 
-class GanttChart(QWidget):
-    def __init__(self):
+class _ThemedChart(QWidget):
+    """Общая база для Ганта и сетевого графика."""
+
+    def __init__(self, figsize=(8, 5)):
         super().__init__()
-        self.fig = Figure(figsize=(8, 5), tight_layout=True)
-        self.fig.patch.set_facecolor("#181820")
+        self.current_theme = "dark"
+        self.pal = theme.palette("dark")
+        self.fig = Figure(figsize=figsize)
         self.canvas = FigureCanvasQTAgg(self.fig)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.canvas)
 
-    def plot(self, result):
-        self.fig.clear()
-        ax = self.fig.add_subplot(111)
-        ax.set_facecolor("#181820")
-        for spine in ax.spines.values():
-            spine.set_color("#444")
-        ax.tick_params(colors="#cccccc")
-        ax.xaxis.label.set_color("#cccccc")
-        ax.title.set_color("#ffffff")
-
-        tasks = sorted(result.tasks.values(), key=lambda r: (r.es, r.task_id))
-        n = len(tasks)
-
-        for i, r in enumerate(tasks):
-            y = n - i - 1
-            color = "#ff6b6b" if r.is_critical else "#4dabf7"
-            ax.barh(y, r.duration, left=r.es, height=0.55,
-                    color=color, edgecolor="white", linewidth=0.6, zorder=3)
-            if r.tf > 0:
-                ax.barh(y, r.tf, left=r.ef, height=0.55,
-                        color="#666666", edgecolor="#aaaaaa",
-                        linestyle="--", zorder=2, alpha=0.6)
-            ax.text(r.es - 0.4, y, f"{r.task_id} — {r.name}",
-                    va="center", ha="right", fontsize=9, color="#dddddd")
-
-        ax.set_yticks([])
-        ax.set_xlabel("Время (дни)")
-        ax.set_xlim(-max(5, n), result.duration + 3)
-        ax.set_ylim(-0.5, n - 0.5)
-        ax.grid(axis="x", linestyle=":", alpha=0.35, zorder=0)
-
-        ax.axvline(result.duration, color="#4dff88",
-                   linestyle="--", linewidth=1.5)
-        ax.text(result.duration + 0.2, n - 0.6,
-                f"Длительность = {result.duration:.2f}".rstrip("0").rstrip("."),
-                color="#4dff88", fontsize=10)
-
-        legend = [
-            mpatches.Patch(color="#ff6b6b", label="Критические работы"),
-            mpatches.Patch(color="#4dabf7", label="Работы с резервом"),
-            mpatches.Patch(color="#666666", label="Резерв времени"),
-        ]
-        leg = ax.legend(handles=legend, loc="lower right",
-                        facecolor="#232330", edgecolor="#444")
-        for text in leg.get_texts():
-            text.set_color("#dddddd")
-        ax.set_title("Диаграмма Ганта")
-        self.canvas.draw()
+    def set_theme(self, name):
+        self.current_theme = name
+        self.pal = theme.palette(name)
 
     def clear(self):
         self.fig.clear()
         self.canvas.draw()
 
 
-class NetworkChart(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.fig = Figure(figsize=(8, 5), tight_layout=True)
-        self.fig.patch.set_facecolor("#181820")
-        self.canvas = FigureCanvasQTAgg(self.fig)
-        layout = QVBoxLayout(self)
-        layout.addWidget(self.canvas)
-
-    def plot(self, tasks, result):
+class GanttChart(_ThemedChart):
+    def plot(self, result):
+        pal = self.pal
         self.fig.clear()
+        self.fig.patch.set_facecolor(pal["fig_bg"])
+
         ax = self.fig.add_subplot(111)
-        ax.set_facecolor("#181820")
+        ax.set_facecolor(pal["ax_bg"])
+        for spine in ax.spines.values():
+            spine.set_color(pal["spine"])
+        ax.tick_params(colors=pal["subtext"])
+        ax.xaxis.label.set_color(pal["subtext"])
+
+        tasks = sorted(result.tasks.values(), key=lambda r: (r.es, r.task_id))
+        n = max(1, len(tasks))
+
+        for i, r in enumerate(tasks):
+            y = n - i - 1
+            color = pal["critical"] if r.is_critical else pal["normal"]
+            ax.barh(y, r.duration, left=r.es, height=0.55,
+                    color=color, edgecolor=pal["node_edge"],
+                    linewidth=0.6, zorder=3)
+            if r.tf > 0:
+                ax.barh(y, r.tf, left=r.ef, height=0.55,
+                        color=pal["reserve"], edgecolor=pal["reserve_edge"],
+                        linestyle="--", zorder=2, alpha=0.7)
+            ax.text(r.es - 0.4, y, f"{r.task_id} — {r.name}",
+                    va="center", ha="right", fontsize=9,
+                    color=pal["text"])
+
+        ax.set_yticks([])
+        ax.set_xlabel("Время (дни)", color=pal["subtext"])
+        ax.set_xlim(-max(5, n), result.duration + 3)
+        ax.set_ylim(-0.5, n - 0.5)
+        ax.grid(axis="x", linestyle=":", alpha=0.35, color=pal["grid"],
+                zorder=0)
+
+        ax.axvline(result.duration, color=pal["duration"],
+                   linestyle="--", linewidth=1.5)
+        ax.text(result.duration + 0.2, n - 0.6,
+                f"Длительность = {result.duration:.2f}"
+                .rstrip("0").rstrip("."),
+                color=pal["duration"], fontsize=10)
+
+        ax.set_title("Диаграмма Ганта", color=pal["text"], pad=12)
+
+        legend = [
+            mpatches.Patch(color=pal["critical"], label="Критические работы"),
+            mpatches.Patch(color=pal["normal"], label="Работы с резервом"),
+            mpatches.Patch(color=pal["reserve"], label="Резерв времени"),
+        ]
+        # ↓ Легенда ПОД осью X, горизонтально, 3 колонки — ничего не перекрывает.
+        leg = ax.legend(
+            handles=legend,
+            loc="upper center",
+            bbox_to_anchor=(0.5, -0.14),
+            ncol=3,
+            frameon=True,
+            facecolor=pal["legend_bg"],
+            edgecolor=pal["legend_edge"],
+        )
+        for text in leg.get_texts():
+            text.set_color(pal["text"])
+
+        # Резервируем место снизу под легенду и x-label
+        self.fig.subplots_adjust(left=0.22, right=0.97,
+                                 top=0.92, bottom=0.24)
+        self.canvas.draw()
+
+
+class NetworkChart(_ThemedChart):
+    def plot(self, tasks, result):
+        pal = self.pal
+        self.fig.clear()
+        self.fig.patch.set_facecolor(pal["fig_bg"])
+
+        ax = self.fig.add_subplot(111)
+        ax.set_facecolor(pal["ax_bg"])
 
         G = build_graph(tasks)
 
@@ -166,24 +212,26 @@ class NetworkChart(QWidget):
 
         critical = set(result.critical_path)
 
-        node_colors = ["#ff6b6b" if n in critical else "#4dabf7"
-                       for n in G.nodes()]
+        node_colors = [pal["node_critical"] if n in critical
+                       else pal["node_normal"] for n in G.nodes()]
         edge_colors, edge_widths = [], []
         for u, v in G.edges():
             if u in critical and v in critical:
-                edge_colors.append("#ff3b3b")
+                edge_colors.append(pal["edge_critical"])
                 edge_widths.append(2.8)
             else:
-                edge_colors.append("#888888")
+                edge_colors.append(pal["edge_normal"])
                 edge_widths.append(1.0)
 
-        labels = {n: f"{n}\n({result.tasks[n].duration:.2f}".rstrip("0")
-                       .rstrip(".") + ")"
-                  for n in G.nodes()}
+        labels = {}
+        for n in G.nodes():
+            d = result.tasks[n].duration
+            labels[n] = f"{n}\n({d:.2f}".rstrip("0").rstrip(".") + ")"
 
         nx.draw_networkx_nodes(G, pos, node_color=node_colors,
                                node_size=1600, ax=ax,
-                               edgecolors="white", linewidths=1.2)
+                               edgecolors=pal["node_edge"],
+                               linewidths=1.2)
         nx.draw_networkx_edges(G, pos, edge_color=edge_colors,
                                width=edge_widths, arrows=True,
                                arrowsize=20, ax=ax,
@@ -192,17 +240,18 @@ class NetworkChart(QWidget):
                                 font_color="white")
 
         legend = [
-            mpatches.Patch(color="#ff6b6b", label="Критическая работа"),
-            mpatches.Patch(color="#4dabf7", label="Работа с резервом"),
+            mpatches.Patch(color=pal["node_critical"],
+                           label="Критическая работа"),
+            mpatches.Patch(color=pal["node_normal"],
+                           label="Работа с резервом"),
         ]
         leg = ax.legend(handles=legend, loc="upper right",
-                        facecolor="#232330", edgecolor="#444")
+                        facecolor=pal["legend_bg"],
+                        edgecolor=pal["legend_edge"])
         for text in leg.get_texts():
-            text.set_color("#dddddd")
-        ax.set_title("Сетевой график проекта", color="white")
-        ax.axis("off")
-        self.canvas.draw()
+            text.set_color(pal["text"])
 
-    def clear(self):
-        self.fig.clear()
+        ax.set_title("Сетевой график проекта", color=pal["text"])
+        ax.axis("off")
+        self.fig.subplots_adjust(left=0.02, right=0.98, top=0.93, bottom=0.05)
         self.canvas.draw()
