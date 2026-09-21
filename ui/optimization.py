@@ -1,5 +1,3 @@
-import math
-
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox,
@@ -19,14 +17,37 @@ class OptimizationPanel(QWidget):
         self._tasks = []
         self._mode = Mode.DETERMINISTIC
         self._current_duration = 0.0
+        self.current_theme = "dark"
         self._build_ui()
+        self.set_theme("dark")
 
+    # ------------------------------------------------------------------ API
     def set_context(self, tasks, mode, current_duration):
         self._tasks = tasks
         self._mode = mode
         self._current_duration = current_duration
         self.target.setValue(max(1.0, round(current_duration - 1)))
 
+    def attach_icon(self, ico):
+        self.btn.setIcon(ico)
+
+    def set_theme(self, name: str):
+        self.current_theme = name
+        if name == "dark":
+            self.summary.setStyleSheet(
+                "background:#2a2a3a; padding:8px 12px; border-radius:4px;"
+                "color:#e6e6e6;"
+            )
+        else:
+            self.summary.setStyleSheet(
+                "background:#eef1f7; padding:8px 12px; border-radius:4px;"
+                "color:#1a1a1a; border:1px solid #d0d3dc;"
+            )
+        # перекрасим уже показанный итог, если он есть
+        if self._last_crash is not None:
+            self._render_summary(self._last_crash)
+
+    # ------------------------------------------------------------------ UI
     def _build_ui(self):
         layout = QVBoxLayout(self)
 
@@ -52,9 +73,6 @@ class OptimizationPanel(QWidget):
 
         self.summary = QLabel("")
         self.summary.setTextFormat(Qt.RichText)
-        self.summary.setStyleSheet(
-            "background:#2a2a3a; padding:8px 12px; border-radius:4px;"
-        )
         layout.addWidget(self.summary)
 
         self.table = QTableWidget(0, len(self.COLUMNS))
@@ -63,9 +81,9 @@ class OptimizationPanel(QWidget):
         self.table.setAlternatingRowColors(True)
         layout.addWidget(self.table)
 
-    def attach_icon(self, ico):
-        self.btn.setIcon(ico)
+        self._last_crash = None
 
+    # ---------------------------------------------------------------- логика
     def _run(self):
         if not self._tasks:
             QMessageBox.information(self, "Нет данных",
@@ -79,8 +97,10 @@ class OptimizationPanel(QWidget):
             QMessageBox.critical(self, "Ошибка оптимизации", str(e))
             return
 
-        self.current_label.setText(f"{self._current_duration:.2f}"
-                                   .rstrip("0").rstrip("."))
+        self._last_crash = crash
+        self.current_label.setText(
+            f"{self._current_duration:.2f}".rstrip("0").rstrip(".")
+        )
 
         # Агрегируем шаги по задачам
         agg = {}
@@ -99,17 +119,30 @@ class OptimizationPanel(QWidget):
             self.table.setItem(r, 2, QTableWidgetItem(f"{days:g}"))
             self.table.setItem(r, 3, QTableWidgetItem(f"{cost:.2f}"))
 
-        reachable = crash.final_duration <= target + 1e-6
-        status = ("<span style='color:#4dff88'>цель достигнута</span>"
+        self._render_summary(crash)
+
+    def _render_summary(self, crash):
+        reachable = crash.final_duration <= self.target.value() + 1e-6
+
+        if self.current_theme == "dark":
+            ok_color = "#4dff88"
+            bad_color = "#ff6b6b"
+        else:
+            ok_color = "#1e8f4a"
+            bad_color = "#c0392b"
+
+        status = (f"<span style='color:{ok_color}'>цель достигнута</span>"
                   if reachable
-                  else "<span style='color:#ff6b6b'>цель недостижима "
-                       "(упёрлись в минимумы)</span>")
+                  else f"<span style='color:{bad_color}'>цель недостижима "
+                       f"(упёрлись в минимумы)</span>")
+
+        start = f"{self._current_duration:.2f}".rstrip("0").rstrip(".")
+        end = f"{crash.final_duration:.2f}".rstrip("0").rstrip(".")
 
         self.summary.setText(
             f"<b>Итог оптимизации.</b> "
-            f"Начальная длительность: {self._current_duration:.2f}".rstrip("0").rstrip(".") +
-            f"  →  конечная: <b>{crash.final_duration:.2f}".rstrip("0").rstrip(".") +
-            f"</b> дн.<br>"
+            f"Начальная длительность: {start}  →  "
+            f"конечная: <b>{end}</b> дн.<br>"
             f"Суммарная стоимость ускорения: <b>{crash.total_cost:.2f}</b><br>"
             f"Статус: {status}"
         )

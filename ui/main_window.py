@@ -30,8 +30,9 @@ class MainWindow(QMainWindow):
         self._build_toolbar()
         self._apply_icons()
         self._load_sample()
-        # Распространить стартовую тему на все графики
-        for w in (self.results_table, self.gantt, self.network):
+        # Распространить стартовую тему на все виджеты, которые это умеют
+        for w in (self.results_table, self.gantt, self.network,
+                  self.optimization):
             w.set_theme(self.current_theme)
 
     # ------------------------------------------------------------------ UI
@@ -366,7 +367,8 @@ class MainWindow(QMainWindow):
             act.setIcon(icons.icon(name, color))
 
         # Обновляем только цвета — без пересчёта
-        for w in (self.results_table, self.gantt, self.network):
+        for w in (self.results_table, self.gantt, self.network,
+                  self.optimization):
             w.set_theme(self.current_theme)
 
         # Перерисовываем графики на уже готовом self.result

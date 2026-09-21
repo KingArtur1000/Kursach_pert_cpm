@@ -19,6 +19,6 @@ def main():
     window.show()
     sys.exit(app.exec())
 
-
+# Распространить стартовую тему на все графики
 if __name__ == "__main__":
     main()
