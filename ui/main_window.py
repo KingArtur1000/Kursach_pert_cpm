@@ -1,28 +1,34 @@
 import csv
 import json
+import math
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QKeySequence, QIcon
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QSplitter, QTabWidget,
-    QToolBar, QFileDialog, QMessageBox, QStatusBar
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QSplitter, QTabWidget,
+    QToolBar, QFileDialog, QMessageBox, QStatusBar, QComboBox, QLabel
 )
 
-from model import Task, calculate
+from model import Task, Mode, calculate
 from ui.task_editor import TaskEditor
 from ui.charts import ResultsTable, GanttChart, NetworkChart
+from ui.optimization import OptimizationPanel
+import icons
+import theme as theme_module
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("PERT/CPM — Сетевое планирование проекта")
-        self.resize(1280, 820)
+        self.resize(1360, 860)
         self.result = None
+        self.current_theme = "dark"
 
         self._build_ui()
         self._build_menu()
         self._build_toolbar()
+        self._apply_icons()
         self._load_sample()
 
     # ------------------------------------------------------------------ UI
@@ -30,6 +36,7 @@ class MainWindow(QMainWindow):
         central = QWidget()
         layout = QVBoxLayout(central)
         layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(6)
 
         splitter = QSplitter(Qt.Vertical)
 
@@ -40,12 +47,15 @@ class MainWindow(QMainWindow):
         self.results_table = ResultsTable()
         self.gantt = GanttChart()
         self.network = NetworkChart()
+        self.optimization = OptimizationPanel()
+
         self.tabs.addTab(self.results_table, "Результаты")
         self.tabs.addTab(self.gantt, "Диаграмма Ганта")
         self.tabs.addTab(self.network, "Сетевой график")
+        self.tabs.addTab(self.optimization, "Оптимизация")
         splitter.addWidget(self.tabs)
 
-        splitter.setSizes([320, 500])
+        splitter.setSizes([320, 540])
         layout.addWidget(splitter)
         self.setCentralWidget(central)
 
@@ -57,88 +67,132 @@ class MainWindow(QMainWindow):
         menu = self.menuBar()
         file_menu = menu.addMenu("Файл")
 
-        new_action = QAction("Новый проект", self)
-        new_action.setShortcut(QKeySequence.New)
-        new_action.triggered.connect(self._new_project)
-        file_menu.addAction(new_action)
+        new = QAction("Новый проект", self)
+        new.setShortcut(QKeySequence.New)
+        new.triggered.connect(self._new_project)
+        file_menu.addAction(new)
 
-        open_action = QAction("Открыть...", self)
-        open_action.setShortcut(QKeySequence.Open)
-        open_action.triggered.connect(self._open_project)
-        file_menu.addAction(open_action)
+        open_a = QAction("Открыть...", self)
+        open_a.setShortcut(QKeySequence.Open)
+        open_a.triggered.connect(self._open_project)
+        file_menu.addAction(open_a)
 
-        save_action = QAction("Сохранить...", self)
-        save_action.setShortcut(QKeySequence.Save)
-        save_action.triggered.connect(self._save_project)
-        file_menu.addAction(save_action)
-
-        file_menu.addSeparator()
-
-        export_action = QAction("Экспорт результатов в CSV...", self)
-        export_action.triggered.connect(self._export_csv)
-        file_menu.addAction(export_action)
+        save_a = QAction("Сохранить...", self)
+        save_a.setShortcut(QKeySequence.Save)
+        save_a.triggered.connect(self._save_project)
+        file_menu.addAction(save_a)
 
         file_menu.addSeparator()
 
-        quit_action = QAction("Выход", self)
-        quit_action.setShortcut(QKeySequence.Quit)
-        quit_action.triggered.connect(self.close)
-        file_menu.addAction(quit_action)
+        export_a = QAction("Экспорт результатов в CSV...", self)
+        export_a.triggered.connect(self._export_csv)
+        file_menu.addAction(export_a)
 
-        # Меню «Расчёт»
+        file_menu.addSeparator()
+
+        quit_a = QAction("Выход", self)
+        quit_a.setShortcut(QKeySequence.Quit)
+        quit_a.triggered.connect(self.close)
+        file_menu.addAction(quit_a)
+
         calc_menu = menu.addMenu("Расчёт")
-        calc_action = QAction("Выполнить расчёт", self)
-        calc_action.setShortcut("F5")
-        calc_action.triggered.connect(self._calculate)
-        calc_menu.addAction(calc_action)
+        calc_a = QAction("Выполнить расчёт", self)
+        calc_a.setShortcut("F5")
+        calc_a.triggered.connect(self._calculate)
+        calc_menu.addAction(calc_a)
 
-        # Меню «Справка»
+        view_menu = menu.addMenu("Вид")
+        theme_a = QAction("Переключить тему", self)
+        theme_a.setShortcut("Ctrl+T")
+        theme_a.triggered.connect(self._toggle_theme)
+        view_menu.addAction(theme_a)
+
         help_menu = menu.addMenu("Справка")
-        about_action = QAction("О программе", self)
-        about_action.triggered.connect(self._about)
-        help_menu.addAction(about_action)
+        about_a = QAction("О программе", self)
+        about_a.triggered.connect(self._about)
+        help_menu.addAction(about_a)
 
     def _build_toolbar(self):
         tb = QToolBar("Панель инструментов")
         tb.setMovable(False)
-        tb.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        tb.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.addToolBar(tb)
 
         def add(text, slot, shortcut=None):
-            act = QAction(text, self)
+            a = QAction(text, self)
             if shortcut:
-                act.setShortcut(shortcut)
-            act.triggered.connect(slot)
-            tb.addAction(act)
-            return act
+                a.setShortcut(shortcut)
+            a.triggered.connect(slot)
+            tb.addAction(a)
+            return a
 
-        add("▶  Рассчитать", self._calculate, "F5")
+        self.act_calc = add("Рассчитать", self._calculate, "F5")
         tb.addSeparator()
-        add("➕  Добавить работу", self.editor.add_row)
-        add("➖  Удалить выбранные", self.editor.remove_selected)
+        self.act_add = add("Добавить", self.editor.add_row)
+        self.act_rm = add("Удалить", self.editor.remove_selected)
         tb.addSeparator()
-        add("📂  Открыть", self._open_project)
-        add("💾  Сохранить", self._save_project)
-        add("📤  Экспорт CSV", self._export_csv)
+        self.act_open = add("Открыть", self._open_project)
+        self.act_save = add("Сохранить", self._save_project)
+        self.act_export = add("Экспорт CSV", self._export_csv)
+        tb.addSeparator()
 
-    # --------------------------------------------------------------- Данные
+        tb.addWidget(QLabel("  Режим: "))
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItem("Детерминированный (CPM)",
+                                Mode.DETERMINISTIC)
+        self.mode_combo.addItem("Вероятностный (PERT)", Mode.PERT)
+        self.mode_combo.currentIndexChanged.connect(self._calculate)
+        tb.addWidget(self.mode_combo)
+
+        tb.addSeparator()
+        self.act_theme = add("Тема", self._toggle_theme, "Ctrl+T")
+
+    def _apply_icons(self):
+        color = "#e6e6e6"
+        self.act_calc.setIcon(icons.icon("play", color))
+        self.act_add.setIcon(icons.icon("plus", color))
+        self.act_rm.setIcon(icons.icon("minus", color))
+        self.act_open.setIcon(icons.icon("folder", color))
+        self.act_save.setIcon(icons.icon("save", color))
+        self.act_export.setIcon(icons.icon("export", color))
+        self.act_theme.setIcon(icons.icon("moon", color))
+
+        self.editor.attach_icons(icons.icon("plus", color),
+                                 icons.icon("minus", color))
+        self.optimization.attach_icon(icons.icon("gear", color))
+
+    # --------------------------------------------------------------- данные
     def _load_sample(self):
         sample = [
-            Task("A", "Анализ требований", 3, []),
-            Task("B", "Архитектура", 4, ["A"]),
-            Task("C", "Дизайн UI", 2, ["A"]),
-            Task("D", "Бэкенд", 5, ["B"]),
-            Task("E", "Фронтенд", 4, ["B", "C"]),
-            Task("F", "Интеграция API", 3, ["D"]),
-            Task("G", "Верстка", 2, ["E"]),
-            Task("H", "Тестирование", 3, ["F", "G"]),
-            Task("I", "Развертывание", 2, ["H"]),
-            Task("J", "Документация", 1, ["I"]),
+            Task("A", "Анализ требований", 3, [],
+                 o=2, m=3, p=5, crash_duration=2, cost_per_day=100),
+            Task("B", "Архитектура", 4, ["A"],
+                 o=3, m=4, p=6, crash_duration=2, cost_per_day=200),
+            Task("C", "Дизайн UI", 2, ["A"],
+                 o=1, m=2, p=4, crash_duration=1, cost_per_day=150),
+            Task("D", "Бэкенд", 5, ["B"],
+                 o=4, m=5, p=7, crash_duration=3, cost_per_day=250),
+            Task("E", "Фронтенд", 4, ["B", "C"],
+                 o=3, m=4, p=6, crash_duration=2, cost_per_day=200),
+            Task("F", "Интеграция API", 3, ["D"],
+                 o=2, m=3, p=4, crash_duration=2, cost_per_day=150),
+            Task("G", "Верстка", 2, ["E"],
+                 o=1, m=2, p=3, crash_duration=1, cost_per_day=100),
+            Task("H", "Тестирование", 3, ["F", "G"],
+                 o=2, m=3, p=5, crash_duration=2, cost_per_day=180),
+            Task("I", "Развертывание", 2, ["H"],
+                 o=1, m=2, p=3, crash_duration=1, cost_per_day=100),
+            Task("J", "Документация", 1, ["I"],
+                 o=1, m=1, p=2, crash_duration=1, cost_per_day=50),
         ]
         self.editor.set_tasks(sample)
         self._calculate()
 
-    # ------------------------------------------------------------- Действия
+    # --------------------------------------------------------------- режим
+    def _current_mode(self) -> Mode:
+        return self.mode_combo.currentData()
+
+    # ------------------------------------------------------------- расчёт
     def _calculate(self):
         try:
             tasks = self.editor.get_tasks()
@@ -150,21 +204,45 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Ошибка", "Список работ пуст.")
             return
 
+        mode = self._current_mode()
         try:
-            self.result = calculate(tasks)
+            self.result = calculate(tasks, mode)
         except Exception as e:
             QMessageBox.critical(self, "Ошибка расчёта", str(e))
             return
 
+        # Обновить представления
         self.results_table.update_results(self.result)
         self.gantt.plot(self.result)
         self.network.plot(tasks, self.result)
+        self.optimization.set_context(tasks, mode, self.result.duration)
+
+        # PERT-инфо
+        if mode == Mode.PERT:
+            dur = self.result.duration
+            sd = self.result.stdev
+            prob95 = self._norm_cdf((dur + 1.645 * sd - dur) / sd) if sd > 0 else 1.0
+            self.results_table.set_info(
+                f"<b>PERT-режим.</b> Ожидаемая длительность: "
+                f"<b>{dur:.2f}</b> дн., σ = <b>{sd:.2f}</b>. "
+                f"С вероятностью 95% проект завершится не позже "
+                f"<b>{dur + 1.645 * sd:.2f}</b> дн. "
+                f"(<i>среднеквадратичное отклонение учитывает "
+                f"неопределённость оценок O/M/P</i>)"
+            )
+        else:
+            self.results_table.set_info("")
 
         self.status.showMessage(
-            f"Длительность проекта: {self.result.duration:g} дн.   |   "
-            f"Критический путь: {' → '.join(self.result.critical_path)}"
+            f"Длительность проекта: {self.result.duration:.2f}".rstrip("0").rstrip(".") +
+            f" дн.   |   Критический путь: {' → '.join(self.result.critical_path)}"
         )
 
+    @staticmethod
+    def _norm_cdf(x):
+        return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+
+    # ------------------------------------------------------------- действия
     def _new_project(self):
         self.editor.set_tasks([])
         self.results_table.clear()
@@ -184,9 +262,15 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Ошибка ввода", str(e))
             return
 
-        data = [{"id": t.task_id, "name": t.name,
-                 "duration": t.duration, "preds": t.predecessors}
-                for t in tasks]
+        data = []
+        for t in tasks:
+            data.append({
+                "id": t.task_id, "name": t.name, "duration": t.duration,
+                "preds": t.predecessors,
+                "o": t.o, "m": t.m, "p": t.p,
+                "crash_duration": t.crash_duration,
+                "cost_per_day": t.cost_per_day,
+            })
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         self.status.showMessage(f"Сохранено: {path}")
@@ -203,8 +287,14 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Ошибка чтения", str(e))
             return
 
-        tasks = [Task(d["id"], d["name"], float(d["duration"]),
-                      list(d.get("preds", []))) for d in data]
+        tasks = [Task(
+            task_id=d["id"], name=d["name"],
+            duration=float(d["duration"]),
+            predecessors=list(d.get("preds", [])),
+            o=d.get("o"), m=d.get("m"), p=d.get("p"),
+            crash_duration=d.get("crash_duration"),
+            cost_per_day=d.get("cost_per_day"),
+        ) for d in data]
         self.editor.set_tasks(tasks)
         self._calculate()
         self.status.showMessage(f"Загружено: {path}")
@@ -230,12 +320,32 @@ class MainWindow(QMainWindow):
                             "★" if r.is_critical else ""])
         self.status.showMessage(f"Экспортировано: {path}")
 
+    # ------------------------------------------------------------- тема
+    def _toggle_theme(self):
+        self.current_theme = "light" if self.current_theme == "dark" else "dark"
+        theme_module.apply_theme(QApplication.instance(), self.current_theme)
+        color = "#1a1a1a" if self.current_theme == "light" else "#e6e6e6"
+        self.act_theme.setIcon(icons.icon(
+            "sun" if self.current_theme == "dark" else "moon", color))
+        # Перерисовать графики, чтобы подхватили цвета темы
+        if self.result is not None:
+            try:
+                self.gantt.plot(self.result)
+                self.network.plot(self.editor.get_tasks(), self.result)
+            except Exception:
+                pass
+
     def _about(self):
         QMessageBox.about(
             self, "О программе",
             "<h3>PERT/CPM — Сетевое планирование</h3>"
-            "<p>Программная реализация математической модели "
-            "сетевого планирования и анализа критического пути.</p>"
+            "<p>Программная реализация математических моделей "
+            "сетевого планирования:</p>"
+            "<ul>"
+            "<li>метод критического пути (CPM);</li>"
+            "<li>вероятностная модель PERT (оценки O, M, P);</li>"
+            "<li>оптимизация «время — стоимость» (crashing).</li>"
+            "</ul>"
             "<p><b>Стек:</b> Python, PySide6, NetworkX, Matplotlib.</p>"
             "<p>Курсовая работа по системному анализу.</p>"
         )
