@@ -1,0 +1,132 @@
+[
+  {
+    "id": "A",
+    "name": "Анализ требований",
+    "duration": 3.0,
+    "preds": [],
+    "o": 2.0,
+    "m": 3.0,
+    "p": 5.0,
+    "crash_duration": 2.0,
+    "cost_per_day": 100.0
+  },
+  {
+    "id": "B",
+    "name": "Архитектура",
+    "duration": 4.0,
+    "preds": [
+      "A"
+    ],
+    "o": 3.0,
+    "m": 4.0,
+    "p": 6.0,
+    "crash_duration": 2.0,
+    "cost_per_day": 200.0
+  },
+  {
+    "id": "C",
+    "name": "Дизайн UI",
+    "duration": 2.0,
+    "preds": [
+      "A"
+    ],
+    "o": 1.0,
+    "m": 2.0,
+    "p": 4.0,
+    "crash_duration": 1.0,
+    "cost_per_day": 150.0
+  },
+  {
+    "id": "D",
+    "name": "Бэкенд",
+    "duration": 5.0,
+    "preds": [
+      "B"
+    ],
+    "o": 4.0,
+    "m": 5.0,
+    "p": 7.0,
+    "crash_duration": 3.0,
+    "cost_per_day": 250.0
+  },
+  {
+    "id": "E",
+    "name": "Фронтенд",
+    "duration": 4.0,
+    "preds": [
+      "B",
+      "C"
+    ],
+    "o": 3.0,
+    "m": 4.0,
+    "p": 6.0,
+    "crash_duration": 2.0,
+    "cost_per_day": 200.0
+  },
+  {
+    "id": "F",
+    "name": "Интеграция API",
+    "duration": 3.0,
+    "preds": [
+      "D"
+    ],
+    "o": 2.0,
+    "m": 3.0,
+    "p": 4.0,
+    "crash_duration": 2.0,
+    "cost_per_day": 150.0
+  },
+  {
+    "id": "G",
+    "name": "Верстка",
+    "duration": 2.0,
+    "preds": [
+      "E"
+    ],
+    "o": 1.0,
+    "m": 2.0,
+    "p": 3.0,
+    "crash_duration": 1.0,
+    "cost_per_day": 100.0
+  },
+  {
+    "id": "H",
+    "name": "Тестирование",
+    "duration": 3.0,
+    "preds": [
+      "F",
+      "G"
+    ],
+    "o": 2.0,
+    "m": 3.0,
+    "p": 5.0,
+    "crash_duration": 2.0,
+    "cost_per_day": 180.0
+  },
+  {
+    "id": "I",
+    "name": "Развертывание",
+    "duration": 2.0,
+    "preds": [
+      "H"
+    ],
+    "o": 1.0,
+    "m": 2.0,
+    "p": 3.0,
+    "crash_duration": 1.0,
+    "cost_per_day": 100.0
+  },
+  {
+    "id": "J",
+    "name": "Документация",
+    "duration": 1.0,
+    "preds": [
+      "I"
+    ],
+    "o": 1.0,
+    "m": 1.0,
+    "p": 2.0,
+    "crash_duration": 1.0,
+    "cost_per_day": 50.0
+  }
+]

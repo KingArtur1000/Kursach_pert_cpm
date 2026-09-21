@@ -22,6 +22,10 @@ CRITICAL_BG_DARK = QColor("#5a2a2a")
 CRITICAL_BG_LIGHT = QColor("#fde2e2")
 
 
+# =====================================================================
+#  Таблица результатов
+# =====================================================================
+
 class ResultsTable(QWidget):
     COLUMNS = ["ID", "Название", "Длит.", "ES", "EF",
                "LS", "LF", "TF", "FF", "Крит."]
@@ -29,6 +33,7 @@ class ResultsTable(QWidget):
     def __init__(self):
         super().__init__()
         self.current_theme = "dark"
+        self.result = None
         layout = QVBoxLayout(self)
 
         self.info = QLabel("")
@@ -56,15 +61,15 @@ class ResultsTable(QWidget):
                 "background:#eef1f7; padding:6px 10px; border-radius:4px;"
                 "color:#1a1a1a; border:1px solid #d0d3dc;"
             )
-        # перекрасим критические строки
-        if hasattr(self, "result") and self.result is not None:
+        if self.result is not None:
             self.update_results(self.result)
 
     def update_results(self, result):
         self.result = result
         bg = (CRITICAL_BG_DARK if self.current_theme == "dark"
               else CRITICAL_BG_LIGHT)
-        fg = QColor("#ffffff") if self.current_theme == "dark" else QColor("#7a1f1f")
+        fg = (QColor("#ffffff") if self.current_theme == "dark"
+              else QColor("#7a1f1f"))
 
         self.table.setRowCount(0)
         for tid, r in sorted(result.tasks.items(), key=lambda x: x[1].es):
@@ -93,14 +98,19 @@ class ResultsTable(QWidget):
         self.set_info("")
 
 
+# =====================================================================
+#  База для графиков
+# =====================================================================
+
 class _ThemedChart(QWidget):
-    """Общая база для Ганта и сетевого графика."""
+    """Общая база для диаграммы Ганта и сетевого графика."""
 
     def __init__(self, figsize=(8, 5)):
         super().__init__()
         self.current_theme = "dark"
         self.pal = theme.palette("dark")
         self.fig = Figure(figsize=figsize)
+        self.fig.set_layout_engine("none")
         self.canvas = FigureCanvasQTAgg(self.fig)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -115,10 +125,16 @@ class _ThemedChart(QWidget):
         self.canvas.draw()
 
 
+# =====================================================================
+#  Диаграмма Ганта
+# =====================================================================
+
 class GanttChart(_ThemedChart):
+
     def plot(self, result):
         pal = self.pal
         self.fig.clear()
+        self.fig.set_layout_engine("none")
         self.fig.patch.set_facecolor(pal["fig_bg"])
 
         ax = self.fig.add_subplot(111)
@@ -141,54 +157,70 @@ class GanttChart(_ThemedChart):
                 ax.barh(y, r.tf, left=r.ef, height=0.55,
                         color=pal["reserve"], edgecolor=pal["reserve_edge"],
                         linestyle="--", zorder=2, alpha=0.7)
-            ax.text(r.es - 0.4, y, f"{r.task_id} — {r.name}",
+            ax.text(-0.012, y, f"{r.task_id} — {r.name}",
+                    transform=ax.get_yaxis_transform(),
                     va="center", ha="right", fontsize=9,
-                    color=pal["text"])
+                    color=pal["text"], clip_on=False)
 
         ax.set_yticks([])
-        ax.set_xlabel("Время (дни)", color=pal["subtext"])
-        ax.set_xlim(-max(5, n), result.duration + 3)
-        ax.set_ylim(-0.5, n - 0.5)
-        ax.grid(axis="x", linestyle=":", alpha=0.35, color=pal["grid"],
-                zorder=0)
+        ax.set_xlabel("Время (дни)", color=pal["subtext"], labelpad=6)
+        ax.set_xlim(0, max(result.duration + 1.5, 5))
+        # Запас сверху: бейдж «Длительность» висит в пустой полосе
+        ax.set_ylim(-0.6, n + 0.9)
+        ax.grid(axis="x", linestyle=":", alpha=0.35,
+                color=pal["grid"], zorder=0)
 
         ax.axvline(result.duration, color=pal["duration"],
-                   linestyle="--", linewidth=1.5)
-        ax.text(result.duration + 0.2, n - 0.6,
-                f"Длительность = {result.duration:.2f}"
-                .rstrip("0").rstrip("."),
-                color=pal["duration"], fontsize=10)
+                   linestyle="--", linewidth=1.5, zorder=4)
 
-        ax.set_title("Диаграмма Ганта", color=pal["text"], pad=12)
+        dur_text = (f"Длительность = {result.duration:.2f}"
+                    .rstrip("0").rstrip("."))
+        ax.text(0.015, 0.985, dur_text,
+                transform=ax.transAxes,
+                ha="left", va="top", fontsize=10,
+                color=pal["duration"], zorder=6,
+                bbox=dict(boxstyle="round,pad=0.35",
+                          facecolor=pal["fig_bg"],
+                          edgecolor=pal["duration"], linewidth=1.0,
+                          alpha=0.95))
 
+        ax.set_title("Диаграмма Ганта", color=pal["text"], pad=14)
+
+        # ---- Легенда в координатах ФИГУРЫ, самый низ ----
         legend = [
             mpatches.Patch(color=pal["critical"], label="Критические работы"),
-            mpatches.Patch(color=pal["normal"], label="Работы с резервом"),
-            mpatches.Patch(color=pal["reserve"], label="Резерв времени"),
+            mpatches.Patch(color=pal["normal"],   label="Работы с резервом"),
+            mpatches.Patch(color=pal["reserve"],  label="Резерв времени"),
         ]
-        # ↓ Легенда ПОД осью X, горизонтально, 3 колонки — ничего не перекрывает.
-        leg = ax.legend(
+        leg = self.fig.legend(
             handles=legend,
-            loc="upper center",
-            bbox_to_anchor=(0.5, -0.14),
+            loc="lower left",
+            bbox_to_anchor=(0.01, 0.015),
             ncol=3,
             frameon=True,
             facecolor=pal["legend_bg"],
             edgecolor=pal["legend_edge"],
+            fontsize=9,
         )
         for text in leg.get_texts():
             text.set_color(pal["text"])
 
-        # Резервируем место снизу под легенду и x-label
-        self.fig.subplots_adjust(left=0.22, right=0.97,
-                                 top=0.92, bottom=0.24)
+        self.fig.subplots_adjust(
+            left=0.26, right=0.98, top=0.90, bottom=0.20,
+        )
         self.canvas.draw()
 
 
+# =====================================================================
+#  Сетевой график
+# =====================================================================
+
 class NetworkChart(_ThemedChart):
+
     def plot(self, tasks, result):
         pal = self.pal
         self.fig.clear()
+        self.fig.set_layout_engine("none")
         self.fig.patch.set_facecolor(pal["fig_bg"])
 
         ax = self.fig.add_subplot(111)
@@ -228,30 +260,43 @@ class NetworkChart(_ThemedChart):
             d = result.tasks[n].duration
             labels[n] = f"{n}\n({d:.2f}".rstrip("0").rstrip(".") + ")"
 
-        nx.draw_networkx_nodes(G, pos, node_color=node_colors,
-                               node_size=1600, ax=ax,
-                               edgecolors=pal["node_edge"],
-                               linewidths=1.2)
-        nx.draw_networkx_edges(G, pos, edge_color=edge_colors,
-                               width=edge_widths, arrows=True,
-                               arrowsize=20, ax=ax,
-                               connectionstyle="arc3,rad=0.1")
+        nx.draw_networkx_nodes(
+            G, pos, node_color=node_colors, node_size=1600, ax=ax,
+            edgecolors=pal["node_edge"], linewidths=1.2,
+        )
+        nx.draw_networkx_edges(
+            G, pos, edge_color=edge_colors, width=edge_widths,
+            arrows=True, arrowsize=20, ax=ax,
+            connectionstyle="arc3,rad=0.1",
+        )
         nx.draw_networkx_labels(G, pos, labels, font_size=10, ax=ax,
                                 font_color="white")
 
+        ax.set_title("Сетевой график проекта",
+                     color=pal["text"], pad=14)
+        ax.axis("off")
+
+        # ---- Легенда в координатах ФИГУРЫ, ПОД графом ----
         legend = [
             mpatches.Patch(color=pal["node_critical"],
                            label="Критическая работа"),
             mpatches.Patch(color=pal["node_normal"],
                            label="Работа с резервом"),
         ]
-        leg = ax.legend(handles=legend, loc="upper right",
-                        facecolor=pal["legend_bg"],
-                        edgecolor=pal["legend_edge"])
+        leg = self.fig.legend(
+            handles=legend,
+            loc="lower center",
+            bbox_to_anchor=(0.5, 0.02),
+            ncol=2,
+            frameon=True,
+            facecolor=pal["legend_bg"],
+            edgecolor=pal["legend_edge"],
+            fontsize=10,
+        )
         for text in leg.get_texts():
             text.set_color(pal["text"])
 
-        ax.set_title("Сетевой график проекта", color=pal["text"])
-        ax.axis("off")
-        self.fig.subplots_adjust(left=0.02, right=0.98, top=0.93, bottom=0.05)
+        self.fig.subplots_adjust(
+            left=0.03, right=0.97, top=0.90, bottom=0.12,
+        )
         self.canvas.draw()
